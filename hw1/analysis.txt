@@ -1,0 +1,122 @@
+Compiled with:
+    $ make hello_world
+        cc     hello_world.c   -o hello_world
+
+Installed binutils with Homebrew, ran
+    $ gobjdump -D hello_world > h_w_objdump.txt
+and 
+    $ gobjdump -D pwd > pwd_objdump.txt
+
+
+
+1. hello_world.c
+
+    - Compiling:
+        $ make hello_world
+            cc     hello_world.c   -o hello_world
+
+
+
+    - Printing "Hello world":
+        Move the string at 100000f76 ("Hello world!\n") to %rax:
+            100000ec8:   48 8d 05 a7 00 00 00    lea    0xa7(%rip),%rax        
+                # 100000f76 <_main+0xb6>
+        ...
+        Put that string in %rdi so printf can access it:
+            100000ee4:   48 89 c7                mov    %rax,%rdi
+        ...
+        Call printf:
+            100000ee9:   e8 68 00 00 00          callq  100000f56 <_main+0x96>
+
+
+
+    - Printing the arguments:
+        Initially i, at -0x14(%rbp) is set to 0, 
+        representing the number of printed arguments
+            100000edd:   c7 45 ec 00 00 00 00    movl   $0x0,-0x14(%rbp)
+        ...
+
+        Then it is compared to the number of arguments; 
+        if all arguments have been printed, the program jumps to instructions 
+        after this loop.
+            100000f13:   89 45 e0                mov    %eax,-0x20(%rbp)
+            100000f16:   8b 45 ec                mov    -0x14(%rbp),%eax
+            100000f19:   3b 45 f8                cmp    -0x8(%rbp),%eax
+            100000f1c:   0f 8d 2b 00 00 00       jge    100000f4d <_main+0x8d>
+
+        Else, move string "  [%s]\n" into %rdi
+            100000f22:   48 8d 3d 7b 00 00 00    lea    0x7b(%rip),%rdi        
+                # 100000fa4 <_main+0xe4>
+        And index into argv, -0x10(%rbp), by i, -0x14(%rbp),
+        putting the result into %rsi so that it is found by %rdi's %s
+            100000f29:   48 63 45 ec             movslq -0x14(%rbp),%rax
+            100000f2d:   48 8b 4d f0             mov    -0x10(%rbp),%rcx
+            100000f31:   48 8b 34 c1             mov    (%rcx,%rax,8),%rsi
+            100000f35:   b0 00                   mov    $0x0,%al
+
+        Print
+            100000f37:   e8 1a 00 00 00          callq  100000f56 <_main+0x96>
+
+        Increment i in %edx, move it back to -0x14(%rbp), 
+        and jump back to the beginning of the loop
+            100000f3c:   8b 55 ec                mov    -0x14(%rbp),%edx
+            100000f3f:   83 c2 01                add    $0x1,%edx
+            100000f42:   89 55 ec                mov    %edx,-0x14(%rbp)
+            100000f45:   89 45 dc                mov    %eax,-0x24(%rbp)
+            100000f48:   e9 c9 ff ff ff          jmpq   100000f16 <_main+0x56>
+
+
+
+
+
+2. pwd
+
+    - Password decryption routine:
+        sub_4005BD, as below:
+            4005bd:   55                      push   %rbp
+            4005be:   48 89 e5                mov    %rsp,%rbp
+            4005c1:   48 89 7d e8             mov    %rdi,-0x18(%rbp)
+            4005c5:   89 75 e4                mov    %esi,-0x1c(%rbp)
+            4005c8:   c6 45 ff ff             movb   $0xff,-0x1(%rbp)
+            4005cc:   c7 45 f8 00 00 00 00    movl   $0x0,-0x8(%rbp)
+            4005d3:   eb 37                   jmp    40060c <gets@plt+0x14c>
+            4005d5:   8b 55 f8                mov    -0x8(%rbp),%edx
+            4005d8:   48 8b 45 e8             mov    -0x18(%rbp),%rax
+            4005dc:   48 01 d0                add    %rdx,%rax
+            4005df:   0f b6 00                movzbl (%rax),%eax
+            4005e2:   88 45 f7                mov    %al,-0x9(%rbp)
+            4005e5:   8b 55 f8                mov    -0x8(%rbp),%edx
+            4005e8:   48 8b 45 e8             mov    -0x18(%rbp),%rax
+            4005ec:   48 01 c2                add    %rax,%rdx
+            4005ef:   8b 4d f8                mov    -0x8(%rbp),%ecx
+            4005f2:   48 8b 45 e8             mov    -0x18(%rbp),%rax
+            4005f6:   48 01 c8                add    %rcx,%rax
+            4005f9:   0f b6 00                movzbl (%rax),%eax
+            4005fc:   32 45 ff                xor    -0x1(%rbp),%al
+            4005ff:   88 02                   mov    %al,(%rdx)
+            400601:   0f b6 45 f7             movzbl -0x9(%rbp),%eax
+            400605:   88 45 ff                mov    %al,-0x1(%rbp)
+            400608:   83 45 f8 01             addl   $0x1,-0x8(%rbp)
+            40060c:   8b 45 f8                mov    -0x8(%rbp),%eax
+            40060f:   3b 45 e4                cmp    -0x1c(%rbp),%eax
+            400612:   72 c1                   jb     4005d5 <gets@plt+0x115>
+            400614:   5d                      pop    %rbp
+            400615:   c3                      retq   
+
+        sub_4005BD is called from main using
+            400664:   e8 54 ff ff ff          callq  4005bd <gets@plt+0xfd>
+        Just before that, the password is loaded into -0x20(%rbp) in four parts,
+        each part loaded into %rax and then its correct index from %rbp.
+        Stepping through this section in gdb shows that %rax gets the following
+        values:
+            0xcfa2cbb8e783f484
+            0xcb94fa8fe9b6d3bf
+            0xf590e683f1aedcb3
+            0xe391f487
+        So the encrypted password is
+            84f483e7b8cba2cfbfd3b6e98ffa94cbb3dcaef183e690f587f491e3
+
+    - Decrypted password:
+        Stepping in gdb to the comparison of the decrypted password
+        and the user input, printing the decrypted password gives
+            "{pwd_simple_fun_xor_reverser"
