@@ -137,7 +137,7 @@ pwd_objdump
         Put %rsi into var_130
             400627:   48 89 b5 d0 fe ff ff    mov    %rsi,-0x130(%rbp)
 
-        Move all four qwords of the password into -0x20(%rbp)
+        Move all four qwords (8 bytes) of the password into -0x20(%rbp), variable name s2
             40062e:   48 8b 05 13 01 00 00    mov    0x113(%rip),%rax        
                 # 400748 <gets@plt+0x288>
             400635:   48 89 45 e0             mov    %rax,-0x20(%rbp)
@@ -153,7 +153,7 @@ pwd_objdump
         And store the password's address in %rax
             400658:   48 8d 45 e0             lea    -0x20(%rbp),%rax
 
-        %esi = 1Ch
+        %esi = 0x 00 00 00 1C
             40065c:   be 1c 00 00 00          mov    $0x1c,%esi
 
         *****Put the password's address into %rdi and call 4005BD*****
@@ -161,10 +161,13 @@ pwd_objdump
             400664:   e8 54 ff ff ff          callq  4005bd <gets@plt+0xfd>
 
         Ask user for the password
+        puts "Enter the password: "
             400669:   bf 67 07 40 00          mov    $0x400767,%edi
             40066e:   e8 1d fe ff ff          callq  400490 <puts@plt>
+        -0x120(%rbp) is the address of where s1 is stored
             400673:   48 8d 85 e0 fe ff ff    lea    -0x120(%rbp),%rax
             40067a:   48 89 c7                mov    %rax,%rdi
+        gets what the user entered
             40067d:   e8 3e fe ff ff          callq  4004c0 <gets@plt>
             400682:   48 8d 4d e0             lea    -0x20(%rbp),%rcx
             400686:   48 8d 85 e0 fe ff ff    lea    -0x120(%rbp),%rax
@@ -200,6 +203,7 @@ pwd_objdump
 
     - Password decryption routine:
         sub_4005BD
+        Remember that this is in little endian!  most significant byte is to the right
 
         Initially set base and stack pointers
             4005bd:   55                      push   %rbp
@@ -207,32 +211,52 @@ pwd_objdump
 
         Move pw address into var_18
             4005c1:   48 89 7d e8             mov    %rdi,-0x18(%rbp)
+
+        Move 0x1c00..........0xxxxxxff into -0x1c(%rbp) and 0x0 into -0x8(%rbp)
+        1c 1b 1a 19 18 17 16 15 14 13 12 11 10 0f 0e 0d 0c 0b 0a 09 08 07 06 05 04 03 02 01
+        1c 00 00 00 pp pp pp pp pp pp pp pp .. .. .. .. .. .. .. bi 00 00 00 00 .. .. .. ff
             4005c5:   89 75 e4                mov    %esi,-0x1c(%rbp)
             4005c8:   c6 45 ff ff             movb   $0xff,-0x1(%rbp)
             4005cc:   c7 45 f8 00 00 00 00    movl   $0x0,-0x8(%rbp)
             4005d3:   eb 37                   jmp    40060c <gets@plt+0x14c>
 
         Loop start
+          Take index of 0x8, i, into pw, putting that address into %rax
             4005d5:   8b 55 f8                mov    -0x8(%rbp),%edx
             4005d8:   48 8b 45 e8             mov    -0x18(%rbp),%rax
             4005dc:   48 01 d0                add    %rdx,%rax
+
+          Take ith-least-significant byte of pw (at (%rax)) and move it into %eax, 
+          zero-padding it: 
+          %eax = 00 00 00 b1
             4005df:   0f b6 00                movzbl (%rax),%eax
+          Then copy into -0x9(%rbp)
             4005e2:   88 45 f7                mov    %al,-0x9(%rbp)
+
+          Put $(pw_addr)+i into %rdx again, and also %rax
             4005e5:   8b 55 f8                mov    -0x8(%rbp),%edx
             4005e8:   48 8b 45 e8             mov    -0x18(%rbp),%rax
             4005ec:   48 01 c2                add    %rax,%rdx
+
             4005ef:   8b 4d f8                mov    -0x8(%rbp),%ecx
             4005f2:   48 8b 45 e8             mov    -0x18(%rbp),%rax
             4005f6:   48 01 c8                add    %rcx,%rax
+          Put ith byte of pw in %rax, zero-padded
             4005f9:   0f b6 00                movzbl (%rax),%eax
+
+          Bitwise maskflip the ith byte
             4005fc:   32 45 ff                xor    -0x1(%rbp),%al
+          Replace s2 (the stored pw)'s ith byte with the flipped version
             4005ff:   88 02                   mov    %al,(%rdx)
+          Original ith byte becomes the new mask and is added to index i
             400601:   0f b6 45 f7             movzbl -0x9(%rbp),%eax
             400605:   88 45 ff                mov    %al,-0x1(%rbp)
             400608:   83 45 f8 01             addl   $0x1,-0x8(%rbp)
+
+          Compare 0x8 to 0x1c
             40060c:   8b 45 f8                mov    -0x8(%rbp),%eax
             40060f:   3b 45 e4                cmp    -0x1c(%rbp),%eax
-        JB: jump short if below (CF=1)
+          JB: jump short if below (CF=1)
             400612:   72 c1                   jb     4005d5 <gets@plt+0x115>
 
         End of sub_4005BD
